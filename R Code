@@ -7,43 +7,47 @@ library(expsmooth)
 library(fpp2)
 library(seasonal)
 
-DATA = read.csv(file = "Data.csv", header = TRUE, sep = ";")
-GDP = ts(DATA[,2], frequency = 4, start = c(1978, 1))
+DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/data_clean_forecasting_assigment1.csv"), header = TRUE, sep = ";", dec = "," )
+DATA = na.omit(DATA) #Deleting omitted variables
+GDP = ts(log(DATA[,2]), frequency = 4, start = c(1990, 1), end = c(2019,4))
+UNEMP = ts(DATA[,3], frequency = 4, start = c(1990, 1), end = c(2019,4))
+M3 = ts(DATA[,4], frequency = 4, start = c(1990, 1), end = c(2019,4))
 
-#Training Data: Q1 1978 - Q4 2012
-GDP.train = window(GDP, start = 1978, end = c(2012,4))
+#Training Data: Q1 1990 - Q4 2014
+GDP.train = window(GDP, start = 1990, end = c(2014,4))
 
-#Out-off sample data Q1 2013 - Q4 2019 (24)
-GDP.test = window(GDP, start = (2013))
+#Out-off sample data Q1 2015 - Q4 2019 (20)
+GDP.test = window(GDP, start = (2015))
 #length of forecast
-h28 = 28
+h20 = 20
 
 
 ###Preliminary (exploratory) analysis
 
 #outliers which need to be explained
 autoplot(GDP.train/1000)+
-  ggtitle("Gross Domestic Product Norway")+
+  ggtitle("Gross Domestic Product USA")+
   xlab("Qauter")+
-  ylab("NOK in Thousands") 
+  ylab("$ in Thousands") 
 
 #controlling Data for outliers
-which.min(GDP.train)
-#smalles observaton near to the beginning of serie
-which.max(GDP.train)
+which.min(GDP.train) 
+#smalles observaton at the beginning of serie
+which.max(GDP.train) 
 #smalles observaton at the end of serie
-boxplot(GDP.train/1000) #no outliers
+boxplot(GDP.train,res=100, width = 1000, height = 1000) #no outliers
 #!!! boxplot in ggplot
+
 
 #autoplot(GDP.train)+geom_smooth(method = loess, formula = y ~ x)+
 #  ggtitle("Gross Domestic Product Norway")
 
 #Seasonal plots
 ggseasonplot(GDP.train/1000, year.labels = TRUE, year.labels.left = TRUE) +
-  ylab("NOK in Thousands") +
+  ylab("$ in Thousands") +
   ggtitle("Seasonal plot: GDP Norway")
 ggseasonplot(GDP.train, polar = TRUE)+
-  ylab("NOK in Thousands") +
+  ylab("$ in Thousands") +
   ggtitle("Ploar seasonal plot: GDP Norway")
 
 
@@ -53,7 +57,7 @@ summary(tslm(log(GDP.train) ~ trend + season))
 
 #Seasonal subseries plots to emphasises seasonal patterns
 ggsubseriesplot(GDP.train/1000)+
-  ylab("NOK in Thousands") +
+  ylab("$ in Thousands") +
   ggtitle("Seasonal subseries plot: GDP Norway")
 
 ##Scatterplots to explore relationships between timeseries
@@ -65,34 +69,117 @@ ggsubseriesplot(GDP.train/1000)+
 
 #Lag plots
 gglagplot(GDP.train/1000)+
-  ylab("NOK in Thousands")+ xlab("NOK in Thousands")+
+  ylab("$ in Thousands")+ xlab("$ in Thousands")+
   ggtitle("Lagged scatterplots for GDP Norway")
   
 #Autocorrelation plots
 ggAcf(GDP.train, lag.max = 40)+
   ggtitle("Autocorrelation function for GDP Norway")
 
+#snaive with include BoxCOx
+#autoplot(snaive(GDP.train, lambda = BoxCox.lambda(GDP.train), h = h20)) + autolayer(GDP.test)
+#autoplot(rwf(GDP.train, drift = TRUE, h = h20)) + autolayer(GDP.test)
+
+###Time series decomposition
+#Seasonal adjustment: Moving Average
+GDP.train.adj.ma = ma(ma(GDP.train, 2), 4) #Criteria choosed by chapter 6.2
+autoplot(GDP.train/1000, series = "GDP") +
+  autolayer(GDP.train.adj.ma/1000, series = "GDP seas. adj.")+
+  xlab("Quater")+ylab("GDP in Thousands")+
+  ggtitle("GDP and seasonal adjusted GDP")
+
+#Classical multiplicative decompostion 
+#!!! Is widely used but not recommended any more
+GDP.train.decomp.mult = decompose(GDP.train, type="multiplicative")
+(GDP.train/1000) %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Quater") +
+  ggtitle("Classical multiplicative decomposition of GDP")
+
+
+#X11 decomposition
+GDP.train.decomp.x11 = (GDP.train/1000) %>% seas(x11="")
+autoplot(GDP.train.decomp.x11) +
+  xlab("Quater") +
+  ggtitle("X11 decomposition of GDP")
+
+#SEATS decomposition
+#Seasonal Extraction in ARIMA Time Series
+GDP.train %>% seas() %>%
+  autoplot() +
+  ggtitle("SEATS decompostion of GDP")
+
+#STL decomposition (Chapter 6.6)
+#Seasonal and Trend decompostion using Loess
+#several advantages over the other decomposing methods
+GDP.train.decomp.stl = stl(GDP.train, t.window = 13, s.window = "periodic"  , robust = TRUE)
+autoplot(GDP.train.decomp.stl) +
+  ggtitle("STL decompostion of GDP")
+
+###Forecasting the componantes of the series
+#Used decomposition method: STL
+GDP.train.decomp.stl.sea = GDP.train.decomp.stl$time.series[,1]
+GDP.train.decomp.stl.trend = GDP.train.decomp.stl$time.series[,2]
+GDP.train.decomp.stl.remai = GDP.train.decomp.stl$time.series[,3]
+
+#Forecasting the tend
+GDP.train.decomp.stl.trend.fore =  rwf(GDP.train.decomp.stl.trend, drift = TRUE, h = h20)
+autoplot(GDP.train.decomp.stl.trend) +
+  autolayer(rwf(GDP.train.decomp.stl.trend, drift = TRUE, h = h20), series = "Trend Forecast")+
+  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,2], series = "Trend in Test Data")+
+  ggtitle("Forecast of trend from decomposed series")
+
+###!!! Um richtigen Trend(test) zu ermitteln eventuell ganze Serie trenden? (Train + Test)??
+
+#Froecasting the Seasonality
+GDP.train.decomp.stl.sea.fore = snaive(GDP.train.decomp.stl.sea, drift = TRUE, h = h20)
+autoplot(GDP.train.decomp.stl.sea) +
+  autolayer(GDP.train.decomp.stl.sea.fore, series = "Seasonal Forecast")+
+  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,1], series = "Seasonality in Test Data")+
+  ggtitle("Forecast of Seasonality from decomposed series")
+
+#Froecasting the Remaining
+GDP.train.decomp.stl.remai.fore = snaive(GDP.train.decomp.stl.remai, drift = TRUE, h = h20)
+autoplot(GDP.train.decomp.stl.remai) +
+  autolayer(GDP.train.decomp.stl.remai.fore, series = "Remaining Forecast")+
+  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,3], series = "Remaining in Test Data")+
+  ggtitle("Forecast of Remaining from decomposed series")
+
+
+#Forecast unsing the forecast of the three componants
+GDP.train.decomp.stl.add.mean = (GDP.train.decomp.stl.remai.fore$mean +
+                                   GDP.train.decomp.stl.sea.fore$mean +
+                                   GDP.train.decomp.stl.trend.fore$mean)
+GDP.train.decomp.stl.add.upper = (GDP.train.decomp.stl.remai.fore$upper +
+                                    GDP.train.decomp.stl.sea.fore$upper +
+                                    GDP.train.decomp.stl.trend.fore$upper)
+GDP.train.decomp.stl.add.lower = (GDP.train.decomp.stl.remai.fore$lower +
+                                    GDP.train.decomp.stl.sea.fore$lower +
+                                    GDP.train.decomp.stl.trend.fore$lower)
+ggplot()+
+  autolayer(GDP.train, series = "Taining Data")+
+  autolayer(GDP.train.decomp.stl.add.upper[,2], series = "Upper Forecast")+
+  autolayer(GDP.train.decomp.stl.add.mean, series = "Mean Forecast")+
+  autolayer(GDP.train.decomp.stl.add.lower[,2], series = "Lower Forecast")+            
+  autolayer(GDP.test, series = "Test Data")+
+  ggtitle("Forecast by additiv decomponant forecast")
+
+
 
 #Forecasting methods to compare with
 autoplot(GDP.train/1000) +
-  autolayer(meanf(GDP.train/1000, h = h28, bootstrap = TRUE), series = "Mean", PI = FALSE)+
-  autolayer(naive(GDP.train/1000, h = h28, bootstrap = TRUE), series = "Naive", PI = FALSE)+
-  autolayer(snaive(GDP.train/1000, h =  h28, bootstrap = TRUE), series = "Sesonal naive", PI = FALSE)+
-  autolayer(rwf(GDP.train/1000, h = h28, drift = TRUE, bootstrap = TRUE), series = "Random Walk with drift", PI = FALSE)+
-  autolayer(rwf(GDP.train/1000, h = h28, drift = FALSE, bootstrap = TRUE), series = "Random Walk", PI = FALSE)+
+  autolayer(meanf(GDP.train/1000, h = h20, bootstrap = TRUE), series = "Mean", PI = FALSE)+
+  autolayer(naive(GDP.train/1000, h = h20, bootstrap = TRUE), series = "Naive", PI = FALSE)+
+  autolayer(snaive(GDP.train/1000, h =  h20, bootstrap = TRUE), series = "Sesonal naive", PI = FALSE)+
+  autolayer(rwf(GDP.train/1000, h = h20, drift = TRUE, bootstrap = TRUE), series = "Random Walk with drift", PI = FALSE)+
+  autolayer(rwf(GDP.train/1000, h = h20, drift = FALSE, bootstrap = TRUE), series = "Random Walk", PI = FALSE)+
   autolayer(GDP.test/1000, series = "DATA")+
   ggtitle("Forcast for quarterly GDP Norway")+
-  xlab("Quater")+ylab("NOK in Thousands")+
+  xlab("Quater")+ylab("$ in Thousands")+
   guides(colour=guide_legend(title="Forecast"))
 
-
-#snaive with include BoxCOx
-#autoplot(snaive(GDP.train, lambda = BoxCox.lambda(GDP.train), h = h28)) + autolayer(GDP.test)
-#autoplot(rwf(GDP.train, drift = TRUE, h = h28)) + autolayer(GDP.test)
-
 ### nur Gedanken
-GDPn = snaive(GDP.train/1000, h =  h28)
-GDPr = rwf(GDP.train/1000, h = h28, drift = TRUE)
+GDPn = snaive(GDP.train/1000, h =  h20)
+GDPr = rwf(GDP.train/1000, h = h20, drift = TRUE)
 ggAcf(GDPn$residuals)
 #Portmanteau tests for autocorrelation
 #Test if errors are coming from a white noise series
@@ -110,10 +197,13 @@ Box.test(GDPr$residuals, lag = 10, fitdf = 0, type = "Lj")
 #MAPE: Mean absolute precentafe error
 ##Scaled errors
 #MASE: mean absolute scaled error 
-accuracy(meanf(GDP.train, h = h28))
-accuracy(naive(GDP.train, h = h28))
-accuracy(snaive(GDP.train, h = h28))
-accuracy(rwf(GDP.train, drift = TRUE, h = h28))
+GDP.train.accu.mea = accuracy(meanf(GDP.train, h = h20))
+GDP.train.accu.nai = accuracy(naive(GDP.train, h = h20))
+GDP.train.accu.sna = accuracy(snaive(GDP.train, h = h20))
+GDP.train.accu.rwf = accuracy(rwf(GDP.train, drift = TRUE, h = h20))
+GDP.train.accu = as.data.frame(matrix(cbind(GDP.train.accu.mea, GDP.train.accu.nai, GDP.train.accu.sna, GDP.train.accu.rwf), 4, 7), row.names = c("MEAN", "NAIVE", "SNAIVE", "RANDOM W."))
+colnames(GDP.train.accu) = colnames(GDP.train.accu.mea)
+round(GDP.train.accu, digits = 4)
 
 #time series cross-validation !!!Diese Funktion gilt es nachzubilden
 #Kapitel 3.4 
@@ -124,46 +214,12 @@ data.frame(h = 1:8, MSE = GDPforeMSE) %>%
 
 sqrt(mean(GDPfore^2, na.rm = TRUE))
 
-###Time series decomposition
-#Seasonal adjustment: Moving Average
-GDP.train.adj.ma = ma(ma(GDP.train, 2), 4) #Criteria choosed by chapter 6.2
-autoplot(GDP.train/1000, series = "GDP") +
-  autolayer(GDP.train.adj.ma/1000, series = "GDP seas. adj.")+
-  xlab("Quater")+ylab("GDP in Thousands")+
-  ggtitle("GDP and seasonal adjusted GDP")
-
-#Classical multiplicative decompostion 
-#!!! Is widely used but not recommended any more
-(GDP.train/1000) %>% decompose(type="multiplicative") %>%
-  autoplot() + xlab("Quater") +
-  ggtitle("Classical multiplicative decomposition of GDP")
-GDP.train.decomp.mult = decompose(GDP.train, type="multiplicative")
-
-#X11 decomposition
-GDP.train.decomp.x11 = GDP.train %>% seas(x11="")
-autoplot(GDP.train.decomp.x11) +
-  xlab("Quater") +
-  ggtitle("X11 decomposition of GDP")
-
-#SEATS decomposition
-#Seasonal Extraction in ARIMA Time Series
-GDP.train %>% seas() %>%
-  autoplot() +
-  ggtitle("SEATS decompostion of GDP")
-
-#STL decompostion (Chapter 6.6)
-#Seasonal and Trend decompostion using Loess
-#several advantages over the other decomposing methods
-GDP.train %>% stl(t.window = 13, s.window = "periodic"  , robust = TRUE) %>%
-  autoplot()
-
-############################
-#Beginn Aufgabe 5
 
 
 
 
-res = rwf(GDP.train, drift = TRUE, h = h28)
+
+res = rwf(GDP.train, drift = TRUE, h = h20)
 autoplot(res$residuals)
 gghistogram(res$residuals, add.normal = TRUE)
 ggAcf(res$residuals)
