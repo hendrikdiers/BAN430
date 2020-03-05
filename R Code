@@ -86,7 +86,7 @@ GDP.train.adj.ma = ma(ma(GDP.train, 2), 4) #Criteria choosed by chapter 6.2
 autoplot(GDP.train/1000, series = "GDP") +
   autolayer(GDP.train.adj.ma/1000, series = "GDP seas. adj.")+
   xlab("Quater")+ylab("GDP in Thousands")+
-  ggtitle("GDP and seasonal adjusted GDP")
+  ggtitle("GDP and MA seasonal adjusted GDP")
 
 #Classical multiplicative decompostion 
 #!!! Is widely used but not recommended any more
@@ -176,6 +176,47 @@ autoplot(GDP.train/1000) +
   ggtitle("Forcast for quarterly GDP Norway")+
   xlab("Quater")+ylab("$ in Thousands")+
   guides(colour=guide_legend(title="Forecast"))
+
+###Exponential Smoothing
+#Holt's Method 
+GDP.train.fore.holt = holt(GDP.train, h = h20)
+#Damped Holt's Method: Decreasing trend
+#GDP.train.fore.holt2 = holt(GDP.train, damped = TRUE, phi = 0.9, h = h20)
+#damped Holt's method seems to be unappropriated
+#Holt-Winters additive method: Seasonality
+GDP.train.fore.hw1 = hw(GDP.train, seasonal = "additiv", h = h20) 
+GDP.train.fore.hw2 = hw(GDP.train, seasonal = "multiplicativ", h = h20)
+
+autoplot(GDP.train)+
+  autolayer(GDP.test, series = "Test Data")+
+  autolayer(GDP.train.fore.holt, series = "Holt's method", PI = FALSE)+
+  #autolayer(GDP.train.fore.holt2, series = "Damped Holt's method", PI = FALSE)+
+  autolayer(GDP.train.fore.hw1, series = "HW additiv forecast", PI = FALSE)+
+  autolayer(GDP.train.fore.hw2, series = "HW multipicativ forecast", PI = FALSE)+
+  ggtitle("Forecast GDP from Holt's method")+
+  xlab("Quaters")+ylab("$")+guides(colours=guide_legend(title = "Forecast"))
+
+#Results suggest the use of an ETS with 
+#Trend: additiv
+#Seasonal: additiv
+#ETS(.,A,A)
+
+#additive errors and one with multiplicative error
+#additive errors - et = e ~ N(0,v) nii
+
+#Estimating ETS models
+GDP.train.ets = ets(GDP.train, model="AAA", damped=FALSE, additive.only = TRUE)
+summary(GDP.train.ets)
+forecast(GDP.train.ets, h = 20)
+ggplot()+
+  autolayer(GDP.train, series = "Training Data")+
+  autolayer(forecast(GDP.train.ets, h = 20), series = "Forecast with estimated EST(A,A,A")+
+  autolayer(GDP.test, series = "Test Data")
+
+
+
+
+
 
 ### nur Gedanken
 GDPn = snaive(GDP.train/1000, h =  h20)
