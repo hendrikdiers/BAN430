@@ -10,8 +10,12 @@ library(seasonal)
 DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/data_clean_forecasting_assigment1.csv"), header = TRUE, sep = ";", dec = "," )
 DATA = na.omit(DATA) #Deleting omitted variables
 GDP = ts(log(DATA[,2]), frequency = 4, start = c(1990, 1), end = c(2019,4))
-UNEMP = ts(DATA[,3], frequency = 4, start = c(1990, 1), end = c(2019,4))
-M3 = ts(DATA[,4], frequency = 4, start = c(1990, 1), end = c(2019,4))
+UNEMP = ts((DATA[,3]), frequency = 4, start = c(1990, 1), end = c(2019,4))
+M3 = ts(log(DATA[,4]), frequency = 4, start = c(1990, 1), end = c(2019,4))
+
+
+cor(DATA[,2:4])
+
 
 #Training Data: Q1 1990 - Q4 2014
 GDP.train = window(GDP, start = 1990, end = c(2014,4))
@@ -236,11 +240,25 @@ colnames(GDP.train.accu) = colnames(GDP.train.accu.mea)
 round(GDP.train.accu, digits = 4)
 
 
+#Integrating other variables
+autoplot(GDP)+
+  autolayer(M3)+
+  autolayer(UNEMP)
+
+GDP.log.diff = diff(GDP, lag = 1)
+UNEMP.diff = diff(UNEMP, lag = 1)
+M3.log.diff = diff(M3, lag = 1)
+
+autoplot(GDP.log.diff)+
+  autolayer(M3.log.diff)+
+  autolayer(UNEMP.log.diff)
+
+reglm = lm(GDP.log.diff ~ M3.log.diff + UNEMP.diff)
+summary(reglm)
 
 
-### nur Gedanken
-GDPn = snaive(GDP.train/1000, h =  h20)
-GDPr = rwf(GDP.train/1000, h = h20, drift = TRUE)
+
+###Analysing fitted ETS(A,A,A) model
 ggAcf(GDP.train.ets$residuals)
 #Portmanteau tests for autocorrelation
 #Test if errors are coming from a white noise series
@@ -249,6 +267,13 @@ Box.test(GDP.train.ets$residuals, lag = 10, fitdf = 0)
 #Box-Ljung test
 Box.test(GDP.train.ets$residuals, lag = 10, fitdf = 0, type = "Lj")
 #We can conclude that the residuals can be distingushed from a white noise series
+
+autoplot(GDP.train.ets$residuals)
+gghistogram(GDP.train.ets$residuals, add.normal = TRUE)
+#sweet!!!!
+checkresiduals(GDP.train.ets)
+
+
 
 
 
@@ -264,14 +289,5 @@ sqrt(mean(GDPfore^2, na.rm = TRUE))
 
 
 
-
-
-res = rwf(GDP.train, drift = TRUE, h = h20)
-autoplot(res$residuals)
-gghistogram(res$residuals, add.normal = TRUE)
-ggAcf(res$residuals)
-checkresiduals(naive(GDP.train))
-
-###Choosing and fitting models
 
 ##'!!!! Information Creteria: AIC!!!! Prefered
