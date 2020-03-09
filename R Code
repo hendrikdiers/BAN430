@@ -6,6 +6,7 @@ library(fma)
 library(expsmooth)
 library(fpp2)
 library(seasonal)
+library(mFilter) #install.packages(mFilter)
 
 DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/data_clean_forecasting_assigment1.csv"), header = TRUE, sep = ";", dec = "," )
 DATA = na.omit(DATA) #Deleting omitted variables
@@ -18,7 +19,7 @@ cor(DATA[,2:4])
 
 #Training Data: Q1 1990 - Q4 2014
 GDP.train = window(GDP, start = 1990, end = c(2014,4))
-UNEMP.train = window(UNEMP, start = 1990, end = c(2014,4))
+UNEMP.train = window(UNEMP/100, start = 1990, end = c(2014,4)) #Levels
 M3.train = window(M3, start = 1990, end = c(2014,4))
 
 
@@ -26,7 +27,6 @@ M3.train = window(M3, start = 1990, end = c(2014,4))
 GDP.test = window(GDP, start = (2015))
 #length of forecast
 h20 = 20
-
 
 ###Preliminary (exploratory) analysis
 
@@ -43,18 +43,6 @@ which.max(GDP.train)
 #smalles observaton at the end of serie
 boxplot(GDP.train,res=100, width = 1000, height = 1000) #no outliers
 #!!! boxplot in ggplot
-
-
-#autoplot(GDP.train)+geom_smooth(method = loess, formula = y ~ x)+
-#  ggtitle("Gross Domestic Product Norway")
-
-#Seasonal plots
-#ggseasonplot(GDP.train/1000, year.labels = TRUE, year.labels.left = TRUE) +
-#  ylab("$ in Thousands") +
-#  ggtitle("Seasonal plot: GDP Norway")
-#ggseasonplot(GDP.train, polar = TRUE)+
-#  ylab("$ in Thousands") +
-#  ggtitle("Ploar seasonal plot: GDP Norway")
 
 
 #Regression on quartaly dummies and trend
@@ -99,7 +87,6 @@ GDP.train.decomp.mult = decompose(GDP.train, type="multiplicative")
   autoplot() + xlab("Quater") +
   ggtitle("Classical multiplicative decomposition of GDP")
 
-
 #X11 decomposition
 GDP.train.decomp.x11 = (GDP.train/1000) %>% seas(x11="")
 autoplot(GDP.train.decomp.x11) +
@@ -119,7 +106,25 @@ GDP.train.decomp.stl = stl(GDP.train, t.window = 13, s.window = "periodic"  , ro
 autoplot(GDP.train.decomp.stl) +
   ggtitle("STL decompostion of GDP")
 
-### cicle decompostion
+#Decomposing GDP over total time horizant and extracting test period
+GDP.decomp.stl = stl(GDP, t.window = 13, s.window = "periodic"  , robust = TRUE)
+GDP.decomp.stl.test.sea = window(GDP.decomp.stl$time.series[,1], start = c(2015), end = c(2019,4))
+GDP.decomp.stl.test.trend = window(GDP.decomp.stl$time.series[,2], start = c(2015), end = c(2019,4))
+GDP.decomp.stl.test.remain = window(GDP.decomp.stl$time.series[,3], start = c(2015), end = c(2019,4))
+
+#Business cycle
+#auf seasonal adjusted
+GDP.filter.seasadj = hpfilter(GDP.decomp.stl$time.series[,2], drift=TRUE)
+GDP.filter.seasadj.cycle = ts(GDP.filter.seasadj$cycle, start = c(1990, 1), end = c(2019, 4), frequency = 4)
+
+#auf Rohdaten
+GDP.filter.roh = hpfilter(GDP, drift=TRUE)
+GDP.filter.roh.cycle = ts(GDP.filter.roh$cycle, start = c(1990, 1), end = c(2019, 4), frequency = 4)
+
+ggplot()+
+  autolayer(GDP.filter.seasadj.cycle, series = "Seasonal adjusted")+
+  autolayer(GDP.filter.roh.cycle, series = "Seasonal unadjusted")+xlab("Quater")+ylab("Business Cycle")
+
 
 
 ###Forecasting the componantes of the series
@@ -129,26 +134,31 @@ GDP.train.decomp.stl.trend = GDP.train.decomp.stl$time.series[,2]
 GDP.train.decomp.stl.remai = GDP.train.decomp.stl$time.series[,3]
 
 #Forecasting the tend
-GDP.train.decomp.stl.trend.fore =  rwf(GDP.train.decomp.stl.trend, drift = TRUE, h = h20)
-autoplot(GDP.train.decomp.stl.trend) +
-  autolayer(rwf(GDP.train.decomp.stl.trend, drift = TRUE, h = h20), series = "Trend Forecast")+
-  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,2], series = "Trend in Test Data")+
-  ggtitle("Forecast of trend from decomposed series")
 
-###!!! Um richtigen Trend(test) zu ermitteln eventuell ganze Serie trenden? (Train + Test)??
+#GDP.train.decomp.stl.trend.fore =  rwf(GDP.decomp.stl.train.trend, drift = TRUE, h = h20)
+#!!!forecast erzeugt deutlich bessere Ergebnisse! ETS(M,A,N)
+GDP.train.decomp.stl.trend.fore = forecast(GDP.decomp.stl.train.trend, h = h20)
+
+ggplot() +
+  autolayer(GDP.train.decomp.stl.trend.fore, series = "Trend Forecast")+
+  autolayer(GDP.decomp.stl.test.trend, series = "Trend in Test Data")+
+  ggtitle("Forecast of trend from decomposed series") + ylab("Quater")
+
+
+###Trend Forecast 
 
 #Froecasting the Seasonality
-GDP.train.decomp.stl.sea.fore = snaive(GDP.train.decomp.stl.sea, drift = TRUE, h = h20)
-autoplot(GDP.train.decomp.stl.sea) +
+GDP.train.decomp.stl.sea.fore = forecast(GDP.train.decomp.stl.sea, h = h20)
+ggplot() +
   autolayer(GDP.train.decomp.stl.sea.fore, series = "Seasonal Forecast")+
-  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,1], series = "Seasonality in Test Data")+
+  autolayer(GDP.decomp.stl.test.sea, series = "Seasonality in Test Data")+
   ggtitle("Forecast of Seasonality from decomposed series")
 
 #Froecasting the Remaining
-GDP.train.decomp.stl.remai.fore = snaive(GDP.train.decomp.stl.remai, drift = TRUE, h = h20)
-autoplot(GDP.train.decomp.stl.remai) +
+GDP.train.decomp.stl.remai.fore = forecast(GDP.train.decomp.stl.remai, h = h20)
+ggplot() +
   autolayer(GDP.train.decomp.stl.remai.fore, series = "Remaining Forecast")+
-  autolayer((stl(GDP.test, t.window = 13, s.window = "periodic"  , robust = TRUE))$time.series[,3], series = "Remaining in Test Data")+
+  autolayer(GDP.decomp.stl.test.remain, series = "Remaining in Test Data")+
   ggtitle("Forecast of Remaining from decomposed series")
 
 
@@ -164,13 +174,11 @@ GDP.train.decomp.stl.add.lower = (GDP.train.decomp.stl.remai.fore$lower +
                                     GDP.train.decomp.stl.trend.fore$lower)
 ggplot()+
   autolayer(GDP.train, series = "Taining Data")+
-  autolayer(GDP.train.decomp.stl.add.upper[,2], series = "Upper Forecast")+
+  autolayer(GDP.train.decomp.stl.add.upper[,1], series = "Upper Forecast")+
   autolayer(GDP.train.decomp.stl.add.mean, series = "Mean Forecast")+
-  autolayer(GDP.train.decomp.stl.add.lower[,2], series = "Lower Forecast")+            
+  autolayer(GDP.train.decomp.stl.add.lower[,1], series = "Lower Forecast")+            
   autolayer(GDP.test, series = "Test Data")+
   ggtitle("Forecast by additiv decomponant forecast")
-
-
 
 #Forecasting methods to compare with
 autoplot(GDP.train/1000) +
@@ -253,14 +261,14 @@ round(GDP.train.accu, digits = 4)
 ###Integrating other variables
 
 GDP.train.diff = diff(GDP.train, lag = 1)
-UNEMP.train.diff = window(UNEMP.train, start = c(1990,2))
+UNEMP.train.level = window(UNEMP.train, start = c(1990,2))
 M3.train.diff = diff(M3.train, lag = 1)
 
 autoplot(GDP.train.diff)+
   autolayer(M3.train.diff)+
-  autolayer(UNEMP.train.diff/100)
+  autolayer(UNEMP.train.level)
 
-GDP.train.fit = tslm(GDP.train.diff ~ M3.train.diff + UNEMP.train.diff)
+GDP.train.fit = tslm(GDP.train.diff ~ M3.train.diff + UNEMP.train.diff + season) #as obvious, there should not be a trend
 summary(GDP.train.fit)
 CV(GDP.train.fit)
 
@@ -281,7 +289,6 @@ autoplot(GDP.train.diff)+
   autolayer(diff(GDP.test, lag = 1))
 
 
-
 ###Analysing fitted ETS(M,A,A) model
 ggAcf(GDP.train.ets$residuals)
 #Portmanteau tests for autocorrelation
@@ -298,7 +305,17 @@ gghistogram(GDP.train.ets$residuals, add.normal = TRUE)
 checkresiduals(GDP.train.ets)
 
 
+##Scatterplots to explore relationships between timeseries
+autoplot(cbind(GDP.train.diff, UNEMP.train.level, M3.train.diff), facets = TRUE)+
+  ggtitle("First Difference Log(GDP") + xlab("Quater") + ylab("")
 
+qplot(GDP.train.diff, M3.train.diff, asp = 1) +
+  ylab("First Difference log(M3)") + xlab("First Difference log(GDP)")+
+  ggtitle("Scatterplot: First differences log(GDP) - log(M3)")
+
+qplot(GDP.train.diff, UNEMP.train.level, asp = 1) +
+  ylab("Unemployment Rate") + xlab("First Difference log(GDP)")+
+  ggtitle("Scatterplot: First difference log(GDP) - Unemploymant Rate")
 
 
 #time series cross-validation !!!Diese Funktion gilt es nachzubilden
@@ -313,13 +330,9 @@ data.frame(h = 1:8, MSE = GDPforeMSE) %>%
 
 sqrt(mean(GDPfore^2, na.rm = TRUE))
 
-##Scatterplots to explore relationships between timeseries
-#autoplot(GDP.train, facet TRUE)+
-#  ggtitle("Seasonal subseries plot: GDP Norway")
-#muss noch ausgearbeitet werden
-##usefull plotting one series against an other
-#qplot()
 
+qplot()
+?autoplot()
 
 
 ##'!!!! Information Creteria: AIC!!!! Prefered
