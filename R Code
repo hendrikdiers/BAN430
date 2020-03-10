@@ -7,7 +7,9 @@ library(expsmooth)
 library(fpp2)
 library(seasonal)
 library(mFilter) #install.packages(mFilter)
+library(tseries) #install.packages("tseries")
 
+###### task 1
 DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/data_clean_forecasting_assigment1.csv"), header = TRUE, sep = ";", dec = "," )
 DATA = na.omit(DATA) #Deleting omitted variables
 GDP = ts((DATA[,2]), frequency = 4, start = c(1990, 1), end = c(2019,4))
@@ -16,6 +18,7 @@ M3 = ts(log(DATA[,4]), frequency = 4, start = c(1990, 1), end = c(2019,4)) #log 
 
 cor(DATA[,2:4])
 
+###### task 2
 
 #Training Data: Q1 1990 - Q4 2014
 GDP.train = window(GDP, start = 1990, end = c(2014,4))
@@ -28,6 +31,8 @@ GDP.test = window(GDP, start = (2015))
 #length of forecast
 h20 = 20
 
+###### task 3
+
 ###Preliminary (exploratory) analysis
 summary(GDP.train)
 quantile(GDP.train)
@@ -35,20 +40,17 @@ quantile(GDP.train)
 #smalles observaton at the end of serie
 boxplot(GDP.train,res=100, width = 1000, height = 1000) #no outliers
 
-#outliers which need to be explained
 autoplot(GDP.train)+
   ggtitle("Gross Domestic Product USA")+
   xlab("Qauter")+
   ylab("$") 
 
-
 #Regression on quartaly dummies and trend
-summary(tslm(log(GDP.train) ~ trend + season))
-
+summary(tslm((GDP.train) ~ trend + season))
 
 #Seasonal subseries plots to emphasises seasonal patterns
 ggsubseriesplot(GDP.train)+
-  ylab("Log(GDP) in $") +
+  ylab("GDP in $") +
   ggtitle("Seasonal subseries plot: GDP USA")
 
 #Lag plots
@@ -67,7 +69,9 @@ ggPacf(GDP.train, lag.max = 40)+
 #autoplot(snaive(GDP.train, lambda = BoxCox.lambda(GDP.train), h = h20)) + autolayer(GDP.test)
 #autoplot(rwf(GDP.train, drift = TRUE, h = h20)) + autolayer(GDP.test)
 
+##### task 4
 ###Time series decomposition
+
 
 #Classical multiplicative decompostion 
 #!!! Is widely used but not recommended any more
@@ -98,7 +102,7 @@ autoplot(GDP.train.decomp.stl) +
 #Seasonal adjustment: Plotting STL trend component with unadjusted GDP
 autoplot(GDP.train, series = "GDP") +
   autolayer(GDP.train.decomp.stl$time.series[,2], series = "GDP seas. adj.")+
-  xlab("Quater")+ylab("GDP in Thousands")+
+  xlab("Quater")+ylab("GDP in $")+
   ggtitle("GDP and STL trend component")
 
 #Decomposing GDP over total time horizant and extracting test period
@@ -106,6 +110,8 @@ GDP.decomp.stl = stl(GDP, t.window = 13, s.window = "periodic"  , robust = TRUE)
 GDP.decomp.stl.test.sea = window(GDP.decomp.stl$time.series[,1], start = c(2015), end = c(2019,4))
 GDP.decomp.stl.test.trend = window(GDP.decomp.stl$time.series[,2], start = c(2015), end = c(2019,4))
 GDP.decomp.stl.test.remain = window(GDP.decomp.stl$time.series[,3], start = c(2015), end = c(2019,4))
+
+#additiv und multiplicativ unterschiede
 
 #Business cycle
 #auf seasonal adjusted
@@ -127,7 +133,7 @@ GDP.train.decomp.stl.sea = GDP.train.decomp.stl$time.series[,1]
 GDP.train.decomp.stl.trend = GDP.train.decomp.stl$time.series[,2]
 GDP.train.decomp.stl.remai = GDP.train.decomp.stl$time.series[,3]
 
-#Forecasting the tend
+#Forecasting the trend
 
 ###Trend Forecast 
 GDP.train.decomp.stl.trend.fore = forecast(GDP.train.decomp.stl.trend, h = h20)
@@ -136,6 +142,10 @@ ggplot() +
   autolayer(GDP.decomp.stl.test.trend, series = "Trend in Test Data")+
   ggtitle("Forecast of trend from decomposed series") + ylab("Quater")
 
+###Checking Residuals from Trend Forecast
+checkresiduals(GDP.train.decomp.stl.trend.fore)
+
+
 #Froecasting the Seasonality
 GDP.train.decomp.stl.sea.fore = forecast(GDP.train.decomp.stl.sea, h = h20)
 ggplot() +
@@ -143,12 +153,19 @@ ggplot() +
   autolayer(GDP.decomp.stl.test.sea, series = "Seasonality in Test Data")+
   ggtitle("Forecast of Seasonality from decomposed series")
 
+#Checking residuals from Seasonaltiy forecast
+checkresiduals(GDP.train.decomp.stl.sea.fore)
+
 #Froecasting the Remaining
 GDP.train.decomp.stl.remai.fore = forecast(GDP.train.decomp.stl.remai, h = h20)
 ggplot() +
   autolayer(GDP.train.decomp.stl.remai.fore, series = "Remaining Forecast")+
   autolayer(GDP.decomp.stl.test.remain, series = "Remaining in Test Data")+
   ggtitle("Forecast of Remaining from decomposed series")
+
+#Check residuals from Remaining forecast
+checkresiduals(GDP.train.decomp.stl.remai.fore)
+
 
 #Forecast unsing the forecast of the three componants
 GDP.train.decomp.stl.add.mean = (GDP.train.decomp.stl.remai.fore$mean +
@@ -168,6 +185,8 @@ ggplot()+
   autolayer(GDP.test, series = "Test Data")+
   ggtitle("Forecast by additiv decomponant forecast")
 
+##### task 6
+
 #Selecting an appropriate ETS model
 GDP.train.ets.auto = ets(GDP.train, model="ZZZ", damped=FALSE, additive.only = FALSE)
 summary(GDP.train.ets.auto)
@@ -180,15 +199,23 @@ ggplot()+
   autolayer(GDP.test, series = "Test Data")+
   ggtitle("Forecasting with ETS(M,A,M) model")+ ylab("Log(GDP) in $")+xlab("Quater")
 
+#Portmanteau tests for autocorrelation
+#Test if errors are coming from a white noise series
+#Box Pierce test
+Box.test(GDP.train.ets.auto$residuals, lag = 10, fitdf = 0)
+#Box-Ljung test
+Box.test(GDP.train.ets.auto$residuals, lag = 10, fitdf = 0, type = "Lj")
+
+
 
 #Simple forecasting methods to compare with
-autoplot(window(GDP.train, start = c(2005,1))) +
+autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data") +
   autolayer(meanf(GDP.train, h = h20, bootstrap = TRUE), series = "Mean", PI = FALSE)+
   autolayer(naive(GDP.train, h = h20, bootstrap = TRUE), series = "Naive", PI = FALSE)+
   autolayer(snaive(GDP.train, h =  h20, bootstrap = TRUE, drift = TRUE), series = "Sesonal naive", PI = FALSE)+
   autolayer(rwf(GDP.train, h = h20, drift = TRUE, bootstrap = TRUE), series = "Random Walk with drift", PI = FALSE)+
   autolayer(rwf(GDP.train, h = h20, drift = FALSE, bootstrap = TRUE), series = "Random Walk", PI = FALSE)+
-  autolayer(GDP.test, series = "DATA")+
+  autolayer(GDP.test, series = "Test Data")+
   ggtitle("Forcast for quarterly GDP")+
   xlab("Quater")+ylab("$ in Thousands")+
   guides(colour=guide_legend(title="Forecast"))
@@ -211,41 +238,44 @@ autoplot(window(GDP.train, start = c(2005,1)))+
   autolayer(GDP.train.fore.hw2, series = "HW multipicativ forecast", PI = FALSE)+
   ggtitle("Forecast GDP from Holt's method")+
   xlab("Quaters")+ylab("$")+guides(colours=guide_legend(title = "Forecast"))
-#Visualy the additiv Holt-Winter forecast seems to be the best out of the exponential soomthing forecast methods
+#Visualy the multiplicativ Holt-Winter forecast seems to be the best out of the exponential soomthing forecast methods
 #Holt-Winters additive method will be used to compare with other forecast methods
+
+checkresiduals(GDP.train.fore.holt)
+checkresiduals(GDP.train.fore.hw1)
+checkresiduals(GDP.train.fore.hw2)
+
+GDP.train.fore.holt.acc = accuracy(GDP.train.fore.holt, GDP.test)
+GDP.train.fore.hw1.acc = accuracy(GDP.train.fore.hw1, GDP.test)
+GDP.train.fore.hw2.acc = accuracy(GDP.train.fore.hw2, GDP.test)
+GDP.train.exsm.accu = as.data.frame(matrix(cbind(GDP.train.fore.holt.acc[2,], GDP.train.fore.hw1.acc[2,], GDP.train.fore.hw2.acc[2,]), 3, 8, byrow = TRUE)
+                               , row.names = c("Holt's method", "HW additiv", "HW multipicativ"))
+colnames(GDP.train.exsm.accu) = colnames(GDP.train.fore.holt.acc)
+GDP.train.exsm.accu
+#The multiplicativ forecast seems to be the best regarding the RMSE
+
 
 #Plot the most three advanced forecasts
 ggplot()+
   autolayer(window(GDP.train, start = c(2005,1)), series = "Training Data")+
   autolayer(forecast(GDP.train.ets.auto, h = 20),PI = FALSE, series = "Forecast with estimated EST(M,A,A")+
-  autolayer(GDP.train.fore.hw1, series = "HW additiv forecast",PI = FALSE)+
+  autolayer(GDP.train.fore.hw2, series = "HW additiv forecast",PI = FALSE)+
   autolayer(rwf(GDP.train, h = h20, drift = TRUE, bootstrap = TRUE), series = "Random Walk with drift", PI = FALSE)+
   autolayer(GDP.test, series = "Test Data") + ggtitle("Diffrent Forecast methods compared") + xlab("Quater")+
   ylab("log(GDP) in $")
 
 #Compare distribution of residuals from choosen series
 checkresiduals(rwf(GDP.train, drift = TRUE, h = h20))
-checkresiduals(GDP.train.fore.hw1)
+checkresiduals(GDP.train.fore.hw2)
 checkresiduals(GDP.train.ets.auto)
 
-
-
-#Evaluating forecast accuracy
-##Scale dependent errors
-#MAE: Mean absolute error
-#RMSE: Root mean sqared error
-##Percentage errors
-#MAPE: Mean absolute precentage error
-##Scaled errors
-#MASE: mean absolute scaled error; nicht empfohglen für seasonal ts
-
 GDP.train.accu.rwf = accuracy(rwf(GDP.train, drift = TRUE, h = h20), GDP.test)
-GDP.train.accu.hw1 = accuracy(hw(GDP.train, seasonal = "additiv", h = h20), GDP.test)
 GDP.train.accu.ets = accuracy(f = forecast(GDP.train.ets.auto, h = h20), GDP.test)
-GDP.train.accu = as.data.frame(matrix(cbind(GDP.train.accu.rwf[2,], GDP.train.accu.hw1[2,], GDP.train.accu.ets[2,]), 3, 8)
-                               , row.names = c("RANDOM W.", "HW additiv forecast", "EST(M,A,A)"))
+GDP.train.accu = as.data.frame(matrix(cbind(GDP.train.accu.rwf[2,], GDP.train.fore.hw2.acc[2,], GDP.train.accu.ets[2,]), 3, 8, byrow = TRUE)
+                               , row.names = c("RANDOM W.", "HW multiplicativ forecast", "EST(M,A,M)"))
 colnames(GDP.train.accu) = colnames(GDP.train.accu.rwf)
 round(GDP.train.accu, digits = 4)
+
 
 ###Forecasts using splines and Box-Cox
 #Box-Cox
@@ -253,31 +283,41 @@ lambda = BoxCox.lambda(GDP.train)
 #Lambda = 0.1949816
 GDP.train.box = BoxCox(GDP.train, lambda)
 autoplot(GDP.train.box)+
-  ggtitle("GDP Box-Cox transformed")+xlab("Quater")+ylab("GDP")
+  ggtitle("GDP Box-Cox transformed (lambda = 0.19)")+xlab("Quater")+ylab("transformed GDP")
 
 #With and without bias adjustment
 GDP.train.box.fore.non = rwf(GDP.train.box, drift=TRUE, lambda=lambda, h=h20, level=80)
 GDP.train.box.fore.adj = rwf(GDP.train.box, drift=TRUE, lambda=lambda, h=h20, level=80, biasadj=TRUE)
 
-autoplot(window(GDP.train.box, start = c(2005,1)), series = "Training Data") +
-  autolayer(GDP.train.box.fore.adj, series="Bias adjusted") +
-  autolayer(GDP.train.box.fore.non, series="Simple back transformation", PI=FALSE) +
-  autolayer(BoxCox(GDP.test, lambda), series = "Test Data")+ ylab("GDP")+xlab("Quater")+ggtitle("Forecasting GDP with Box-Cox transformation")+
+autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data") +
+  autolayer(InvBoxCox(GDP.train.box.fore.adj$mean, lambda = lambda), series="Bias adjusted") +
+  autolayer(InvBoxCox(GDP.train.box.fore.non$mean, lambda = lambda), series="Simple back transformation") +
+  autolayer(GDP.test, series = "Test Data")+ ylab("GDP")+xlab("Quater")+ggtitle("Forecasting GDP with Box-Cox transformation")+
   guides(colour=guide_legend(title="Forecast"))
 #As it could visualy be recognized: Adjusting the bias has not much of an influence
 checkresiduals(GDP.train.box.fore.adj)
+checkresiduals(GDP.train.box.fore.non)
+GDP.train.box.fore.adj.acc = accuracy(GDP.train.box.fore.adj, BoxCox(GDP.test, lambda = lambda))
+GDP.train.box.fore.non.acc = accuracy(GDP.train.box.fore.non, BoxCox(GDP.test, lambda = lambda))
+GDP.train.box.accu = as.data.frame(matrix(cbind(GDP.train.box.fore.adj.acc[2,], GDP.train.box.fore.non.acc[2,]), 2, 8, byrow = TRUE)
+                               , row.names = c("BC adjusted", "BC not adjusted"))
+colnames(GDP.train.box.accu) = colnames(GDP.train.box.fore.adj.acc)
+round(GDP.train.box.accu, digits = 4)
+
 
 #Splines
-GDP.train.spline = splinef(GDP.train, lambda = 0, h = 20) #lambda = 0, Log() transformation
+GDP.train.spline = splinef(GDP.train, h = 20)
 autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data")+
   autolayer(GDP.train.spline, series = "Forecast")+
   autolayer(GDP.test, series = "Test Data")+
   ggtitle("Forecasting GDP with Natural cubic smoothing splines") + ylab("GDP") + xlab("Quater")
+
 checkresiduals(GDP.train.spline)
+accuracy(GDP.train.spline, GDP.test)
 
 #Compare both forecasts
 autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data")+
-  autolayer(GDP.train.box.fore.adj, series="Bias adjusted", PI = FALSE) +
+  autolayer(InvBoxCox(GDP.train.box.fore.non$mean, lambda = lambda), series="Forecast with BoxCox") +
   autolayer(GDP.train.spline, series = "Forecast from Splines", PI = FALSE)+
   autolayer(GDP.test, series = "Test Data")+
   ylab("GDP") + xlab("Quater") + ggtitle("Comparing Forecast methods: Box-Cox and Natural cubic smoothing splines") 
@@ -288,6 +328,10 @@ autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data")+
 
 ###Integrating other variables
 GDP.train.diff = diff(log(GDP.train), lag = 1)
+#tests for stationarity
+kpss.test(GDP.train.diff, null="Trend") 
+adf.test(GDP.train.diff)
+
 UNEMP.train.level = window(UNEMP.train, start = c(1990,2))
 M3.train.diff = diff(M3.train, lag = 1)
 
@@ -296,7 +340,7 @@ autoplot(GDP.train.diff)+
   autolayer(UNEMP.train.level)
 
 autoplot(cbind(GDP.train.diff, UNEMP.train.level, M3.train.diff), facets = TRUE)+
-  ggtitle("First Difference Log(GDP") + xlab("Quater") + ylab("")
+  ggtitle("Plot of GDP with additional variables") + xlab("Quater") + ylab("")
 
 qplot(GDP.train.diff, M3.train.diff, asp = 1) +
   ylab("First Difference log(M3)") + xlab("First Difference log(GDP)")+
@@ -310,6 +354,8 @@ qplot(GDP.train.diff, UNEMP.train.level, asp = 1) +
 GDP.train.fit = tslm(GDP.train.diff ~ M3.train.diff + UNEMP.train.level + season) #as obvious, there should not be a trend
 summary(GDP.train.fit)
 round(CV(GDP.train.fit), digits = 4)
+#residuals check
+
 
 GDP.train.fit.fore1 = forecast(GDP.train.fit,
                               newdata = data.frame(
@@ -324,33 +370,10 @@ GDP.train.fit.fore2 = forecast(GDP.train.fit,
                               h = h20)
 
 autoplot(window(GDP.train.diff, start = c(2005,1)), series = "Training Data")+
-  autolayer(GDP.train.fit.fore1, series = "Mean Unemployment")+
-  autolayer(GDP.train.fit.fore2, series = "Five times the Mean Unemployment rate")+
+  autolayer(GDP.train.fit.fore1, series = "Mean Unemployment", PI = FALSE)+
+  autolayer(GDP.train.fit.fore2, series = "Five times the Mean Unemployment rate", PI = FALSE)+
   autolayer(diff(log(GDP.test), lag = 1), series = "Test Data")+
   ggtitle("Forecasting first differenc Log(GDP) with diffrent Unemployment rates")+xlab("Quater")+ylab("Differnce")
-
-
-#Portmanteau tests for autocorrelation
-#Test if errors are coming from a white noise series
-#Box Pierce test
-Box.test(GDP.train.ets$residuals, lag = 10, fitdf = 0)
-#Box-Ljung test
-Box.test(GDP.train.ets$residuals, lag = 10, fitdf = 0, type = "Lj")
-#We can conclude that the residuals can be distingushed from a white noise series
-
-
-
-##Scatterplots to explore relationships between timeseries
-autoplot(cbind(GDP.train.diff, UNEMP.train.level, M3.train.diff), facets = TRUE)+
-  ggtitle("First Difference Log(GDP") + xlab("Quater") + ylab("")
-
-qplot(GDP.train.diff, M3.train.diff, asp = 1) +
-  ylab("First Difference log(M3)") + xlab("First Difference log(GDP)")+
-  ggtitle("Scatterplot: First differences log(GDP) - log(M3)")
-
-qplot(GDP.train.diff, UNEMP.train.level, asp = 1) +
-  ylab("Unemployment Rate") + xlab("First Difference log(GDP)")+
-  ggtitle("Scatterplot: First difference log(GDP) - Unemploymant Rate")
 
 
 #time series cross-validation !!!Diese Funktion gilt es nachzubilden
@@ -359,15 +382,18 @@ GDPfore = tsCV(GDP.train, rwf, drift = TRUE, h = 8)
 summary(GDPfore)
 
 
-GDPforeMSE = colMeans(GDPfore, na.rm = TRUE)
-data.frame(h = 1:8, MSE = GDPforeMSE) %>%
-  ggplot(aes(x = h, y = GDPforeMSE)) + geom_point()
-
-sqrt(mean(GDPfore^2, na.rm = TRUE))
 
 
-qplot()
-?autoplot()
+
+
+#Teile Train Set in unterabschnitte
+#mache jeweil in forecast im Trainset
+#MSE Ausgbe + Model Spec, Speichern
+#itera 2
+# if MSE < MSE1 verwerfe Modell und nimm neues else not
+
+tsCV(GDP.train, h = 2, forecastfunction = snaive())
+
 
 
 ##'!!!! Information Creteria: AIC!!!! Prefered
