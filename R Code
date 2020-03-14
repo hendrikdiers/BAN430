@@ -2,12 +2,15 @@ remove(list = ls())
 
 library(forecast)
 library(ggplot2)
+library(ggpubr) #install.packages(ggpuhr)
 library(fma)
 library(expsmooth)
 library(fpp2)
 library(seasonal)
 library(mFilter) #install.packages(mFilter)
 library(tseries) #install.packages("tseries")
+library(scales)
+library(stargazer) #install.packages(Stargazer)
 
 ###### task 1
 DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/data_clean_forecasting_assigment1.csv"), header = TRUE, sep = ";", dec = "," )
@@ -24,6 +27,7 @@ cor(DATA[,2:4])
 GDP.train = window(GDP, start = 1990, end = c(2014,4))
 UNEMP.train = window(UNEMP/100, start = 1990, end = c(2014,4)) #Levels
 M3.train = window(M3, start = 1990, end = c(2014,4))
+#GDP.growth <- log(GDP.train)-log(lag(GDP.train))
 
 
 #Out-off sample data Q1 2015 - Q4 2019 (20)
@@ -37,33 +41,43 @@ h20 = 20
 summary(GDP.train)
 quantile(GDP.train)
 
+#summary(GDP.growth)
+
 #smalles observaton at the end of serie
-boxplot(GDP.train,res=100, width = 1000, height = 1000) #no outliers
+boxplot(GDP.train,res=100, width = 1000, height = 1000)
+#scale_y_continuous(labels = dollar) #no outliers
 
 autoplot(GDP.train)+
-  ggtitle("Gross Domestic Product USA")+
-  xlab("Qauter")+
-  ylab("$") 
+  ggtitle("Real Gross Domestic Product USA")+
+  xlab("Quarter")+
+  ylab("Value per Quarter")+
+  scale_y_continuous(labels = dollar)
 
 #Regression on quartaly dummies and trend
 summary(tslm((GDP.train) ~ trend + season))
 
+
 #Seasonal subseries plots to emphasises seasonal patterns
 ggsubseriesplot(GDP.train)+
-  ylab("GDP in $") +
-  ggtitle("Seasonal subseries plot: GDP USA")
+  ylab("Value per Quarter (in Thousend)") +
+  ggtitle("Seasonal subseries plot: GDP USA")+
+  scale_y_continuous(labels = dollar)
 
 #Lag plots
 gglagplot(GDP.train)+
-  ylab("$ in Thousands")+ xlab("$ in Thousands")+
-  ggtitle("Lagged scatterplots for GDP Norway")
+  scale_y_continuous(name="in Thousands", labels = dollar)+
+  scale_x_continuous(name="in Thousands", labels = dollar,breaks=c(2000000, 4000000))
+ggtitle("Lagged scatterplots for real GDP USA")
 
 #Autocorrelation plots
-ggAcf(GDP.train, lag.max = 40)+
-  ggtitle("Autocorrelation function for GDP Norway")
+#ggarrange(bxp, dp, ncol = 2, labels = c("B", "C"))
+Acf <- ggAcf(GDP.train, lag.max = 40)+
+  ggtitle("Autocorrelation function for real quarterly GDP USA")
 #Parctial Autocorrelation plots
-ggPacf(GDP.train, lag.max = 40)+
-  ggtitle("Partial Autocorrelation function for GDP Norway")
+Pacf <- ggPacf(GDP.train, lag.max = 40)+
+  ggtitle("Partial Autocorrelation function for real quarterly GDP USA")
+ggarrange(Acf, Pacf, ncol = 2, nrow=1, legend = NULL,
+          font.label = list(size = 14))
 
 #snaive with include BoxCOx
 #autoplot(snaive(GDP.train, lambda = BoxCox.lambda(GDP.train), h = h20)) + autolayer(GDP.test)
@@ -78,18 +92,21 @@ ggPacf(GDP.train, lag.max = 40)+
 GDP.train.decomp.mult = decompose(GDP.train, type="multiplicative")
 (GDP.train) %>% decompose(type="multiplicative") %>%
   autoplot() + xlab("Quater") +
+  scale_y_continuous(name="in Thousands", labels = dollar)
   ggtitle("Classical multiplicative decomposition of GDP")
 
 #X11 decomposition
-GDP.train.decomp.x11 = (GDP.train/1000) %>% seas(x11="")
+GDP.train.decomp.x11 = (GDP.train) %>% seas(x11="")
 autoplot(GDP.train.decomp.x11) +
   xlab("Quater") +
+  scale_y_continuous(name="in Thousands", labels = dollar)+
   ggtitle("X11 decomposition of GDP")
 
 #SEATS decomposition
 #Seasonal Extraction in ARIMA Time Series
 GDP.train %>% seas() %>%
   autoplot() +
+  scale_y_continuous(name="in Thousands", labels = dollar)+
   ggtitle("SEATS decompostion of GDP")
 
 #STL decomposition (Chapter 6.6)
@@ -97,12 +114,13 @@ GDP.train %>% seas() %>%
 #several advantages over the other decomposing methods
 GDP.train.decomp.stl = stl(GDP.train, t.window = 13, s.window = "periodic"  , robust = TRUE)
 autoplot(GDP.train.decomp.stl) +
+  scale_y_continuous(name="in Thousands", labels = dollar)+
   ggtitle("STL decompostion of GDP")
 
 #Seasonal adjustment: Plotting STL trend component with unadjusted GDP
 autoplot(GDP.train, series = "GDP") +
   autolayer(GDP.train.decomp.stl$time.series[,2], series = "GDP seas. adj.")+
-  xlab("Quater")+ylab("GDP in $")+
+  xlab("Quater")+ylab("GDP")+scale_y_continuous(name="in Thousands", labels = dollar)+
   ggtitle("GDP and STL trend component")
 
 #Decomposing GDP over total time horizant and extracting test period
@@ -249,7 +267,7 @@ GDP.train.fore.holt.acc = accuracy(GDP.train.fore.holt, GDP.test)
 GDP.train.fore.hw1.acc = accuracy(GDP.train.fore.hw1, GDP.test)
 GDP.train.fore.hw2.acc = accuracy(GDP.train.fore.hw2, GDP.test)
 GDP.train.exsm.accu = as.data.frame(matrix(cbind(GDP.train.fore.holt.acc[2,], GDP.train.fore.hw1.acc[2,], GDP.train.fore.hw2.acc[2,]), 3, 8, byrow = TRUE)
-                               , row.names = c("Holt's method", "HW additiv", "HW multipicativ"))
+                                    , row.names = c("Holt's method", "HW additiv", "HW multipicativ"))
 colnames(GDP.train.exsm.accu) = colnames(GDP.train.fore.holt.acc)
 GDP.train.exsm.accu
 #The multiplicativ forecast seems to be the best regarding the RMSE
@@ -300,7 +318,7 @@ checkresiduals(GDP.train.box.fore.non)
 GDP.train.box.fore.adj.acc = accuracy(GDP.train.box.fore.adj, BoxCox(GDP.test, lambda = lambda))
 GDP.train.box.fore.non.acc = accuracy(GDP.train.box.fore.non, BoxCox(GDP.test, lambda = lambda))
 GDP.train.box.accu = as.data.frame(matrix(cbind(GDP.train.box.fore.adj.acc[2,], GDP.train.box.fore.non.acc[2,]), 2, 8, byrow = TRUE)
-                               , row.names = c("BC adjusted", "BC not adjusted"))
+                                   , row.names = c("BC adjusted", "BC not adjusted"))
 colnames(GDP.train.box.accu) = colnames(GDP.train.box.fore.adj.acc)
 round(GDP.train.box.accu, digits = 4)
 
@@ -321,8 +339,8 @@ autoplot(window(GDP.train, start = c(2005,1)), series = "Training Data")+
   autolayer(GDP.train.spline, series = "Forecast from Splines", PI = FALSE)+
   autolayer(GDP.test, series = "Test Data")+
   ylab("GDP") + xlab("Quater") + ggtitle("Comparing Forecast methods: Box-Cox and Natural cubic smoothing splines") 
-  
-  
+
+
 
 
 
@@ -357,16 +375,16 @@ checkresiduals(GDP.train.fit)
 
 
 GDP.train.fit.fore1 = forecast(GDP.train.fit,
-                              newdata = data.frame(
-                                M3.train.diff = rep(mean(M3.train.diff), h20),
-                                UNEMP.train.level = rep(mean(UNEMP.train.level),h20)),
-                              h = h20)
+                               newdata = data.frame(
+                                 M3.train.diff = rep(mean(M3.train.diff), h20),
+                                 UNEMP.train.level = rep(mean(UNEMP.train.level),h20)),
+                               h = h20)
 
 GDP.train.fit.fore2 = forecast(GDP.train.fit,
-                              newdata = data.frame(
-                                M3.train.diff = rep(mean(M3.train.diff), h20),
-                                UNEMP.train.level = rep(5*mean(UNEMP.train.level),h20)),
-                              h = h20)
+                               newdata = data.frame(
+                                 M3.train.diff = rep(mean(M3.train.diff), h20),
+                                 UNEMP.train.level = rep(5*mean(UNEMP.train.level),h20)),
+                               h = h20)
 
 autoplot(window(GDP.train.diff, start = c(2005,1)), series = "Training Data")+
   autolayer(GDP.train.fit.fore1, series = "Mean Unemployment", PI = FALSE)+
@@ -397,10 +415,10 @@ tsCV_self = function(ts, fcfunction, h=1){
     }
   }  
   if (h == 1) {
-      return(m[, 1L])
-    } else {
-      colnames(m) = paste("h=", 1:h, sep = "")
-      return(m)
+    return(m[, 1L])
+  } else {
+    colnames(m) = paste("h=", 1:h, sep = "")
+    return(m)
   }    
 }
 
