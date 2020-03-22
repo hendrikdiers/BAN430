@@ -1,0 +1,334 @@
+library(ggplot2)
+library(forecast)
+library(rdatamarket)
+library(urca)
+library(lmtest)
+
+##1.#########AUSTRALIAN PRIVAT FINAL CONSUMPTION#############
+    ## 1.0 variables and transformations
+      auscons <- as.ts(dmseries("http://bit.ly/1ONlQzK"))
+      
+      ## other variables
+      h1 <- 12
+  
+  ## 1.1 Divide the data into a training set and a test set where the test set is the last 12 observations.
+  auscons.training <- window(auscons, end = (1988 + 0.25) )
+  auscons.test     <- window(auscons, start = (1988 + 0.5) )
+  
+  ## 1.2 Make appropriate summary statistics and plots for an initial analysis of the time series (use the training set)
+    #sumary stats
+    summary(auscons.training)
+    
+    # first impression (dataplot + regression)
+    autoplot(auscons.training)+
+      geom_smooth()+
+      ylab('expenditure')
+      # variance is not stable => use log! 
+    
+    # plots for inital analysis
+    ggsubseriesplot(auscons.training)+
+      ggtitle('Seasonal Series Plot (Training Data)')+
+      ylab('expenditure')
+    
+    ggseasonplot(auscons.training)+
+      ggtitle('Season Plot (Training Data)')+
+      ylab('expenditure')
+    
+    gglagplot(auscons.training, lags = 12) +
+      ggtitle('Lag Plot (Training Data')
+    
+    ggtsdisplay(auscons.training)
+    
+    ets(auscons.training) %>% autoplot()
+    
+  ## 1.3 Identify an appropriate seasonal ARIMA model and estimate it
+    
+    # initial steps:
+      BoxCox.lambda(auscons.training) # very close to zero!
+      # => take the log to stibilise variance
+      ac.log          <- log(auscons)
+      ac.training.log <- log(auscons.training)
+      ac.test.log     <- log(auscons.test)
+      
+      #take differrences:
+      ac.training.log %>% diff() %>% diff(4) %>%
+        ggtsdisplay(main = 'Training Data after 1st and Seasonal Differencing')
+      
+      #check if stationary
+      ac.training.log %>% 
+        diff() %>% diff(4) %>% ur.kpss() %>%
+        summary() # p value is small => stationari series!
+      
+    
+    # what do auto.arima() and auto.arima() w/ stepwise = F and approximation = F select?
+    auto.arima(ac.training.log)
+    auto.arima(ac.training.log, stepwise = F, approximation = F)
+    
+    ## own modelling:
+    
+      # ARIMA(0,1,0)(0,1,2)[4] bc q = 1 or 2 and PACF exponentially decaying.  
+      ac.training.log %>%
+        Arima(order=c(0,1,0), seasonal=c(0,1,2)) %>%
+        summary()
+      
+      ##test for variations: 
+        # 1. q = 1
+        # ARIMA(0,1,1)(0,1,2)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,1), seasonal=c(0,1,2)) %>%
+          summary() # worse 
+        
+        # 2. q = 2
+        # ARIMA(0,1,2)(0,1,2)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,2), seasonal=c(0,1,2)) %>%
+          summary() # worse
+        
+        # 3. Q = 1
+        # ARIMA(0,1,0)(0,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(0,1,1)) %>%
+          summary() # better
+    
+        # 4. Q = 3
+        # ARIMA(0,1,0)(0,1,3)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(0,1,3)) %>%
+          summary() # worse
+        
+        # 5. P = 1
+        # ARIMA(0,1,0)(1,1,2)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(1,1,2)) %>%
+          summary() # worse
+        
+        # 6. P = 2
+        # ARIMA(0,1,0)(2,1,2)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(2,1,2)) %>%
+          summary() # better
+        
+      # of all models ARIMA(0,1,0)(0,1,1)[4] gives the best AICc value check for variations
+        
+        # 3.1 Q = 1, P = 1
+        # ARIMA(0,1,0)(1,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(1,1,1)) %>%
+          summary()
+        
+        # 3.2 Q = 1, P = 2
+        # ARIMA(0,1,0)(2,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,0), seasonal=c(2,1,1)) %>%
+          summary()
+        
+        # 3.3 Q = 1, q = 1
+        # ARIMA(0,1,1)(0,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,1), seasonal=c(0,1,1)) %>%
+          summary()
+        
+        # 3.4 Q = 1, q = 2
+        # ARIMA(0,1,2)(0,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(0,1,2), seasonal=c(0,1,1)) %>%
+          summary()
+        
+        # 3.5 Q = 1, p = 1
+        # ARIMA(1,1,0)(0,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(1,1,0), seasonal=c(0,1,1)) %>%
+          summary()
+        
+        # 3.6 Q = 1, p = 2
+        # ARIMA(2,1,0)(0,1,1)[4]
+        ac.training.log %>%
+          Arima(order=c(2,1,0), seasonal=c(0,1,1)) %>%
+          summary() 
+        
+        ## does not get better select ARIMA(0,1,0)(0,1,1)[4]
+    
+  ## 1.4 Analyze the estimated model, e.g. are the residuals white noise, are the parameters significant etc.
+      #generate the estimate variable
+      fit.auscons <- Arima(ac.training.log, order = c(0,1,0), seasonal = c(0,1,1))
+      
+      # check residuals
+      checkresiduals(fit.auscons)
+        # Ljung-Box test p value is 0.3881 => accept the null, data are independently distribiuted
+        # however the data is left skewed
+      
+        #check normality with Shapiro-Wilks
+        shapiro.test(fit.auscons$residuals) # we cannot reject the Null
+          #=> no normality, not relevant 
+      
+      #parameters significant?
+      coeftest(fit.auscons)
+      # yes, on the .1% level!
+      
+      #how well does the model fit the training data?
+        #compare fit and data in training set
+        autoplot(fit.auscons$x, series = "data") +
+          autolayer(fitted(fit.auscons), series = "fit")+
+          ylab('log(expenditure)')
+      
+        accuracy(fit.auscons)
+    
+  ## 1.5 Compute the ACF and PACF implied by the estimated model and compare with the sample ACF and PACF (Hint: ARMAacf())
+    ACF <- ARMAacf(ma = c(0,0,0,-0.661409), lag.max = 22, pacf = F)
+    plot(ACF[-1],type='h',xlab = 'Lag k',ylab = expression(rho[k]))
+    abline(h=0)
+    
+    ACFob <- ac.training.log %>% diff() %>% diff(4) %>% acf()
+  
+    PACF <- ARMAacf(ma = c(0,0,0,-0.661409), lag.max = 22, pacf = T)
+    plot(PACF,type='h',ylim=c(-1,1),xlab = 'Lag k',ylab = expression(rho[kk]))
+    abline(h=0)
+    
+    PACFob <- ac.training.log %>% diff() %>% diff(4) %>% pacf()
+    
+    ac.training.log %>% diff() %>% diff(4) %>% ggtsdisplay()
+  
+    
+  ## 1.6 Use the model to forecast the last h = 12 observations. Evaluate the forecasts and plot them and the original time series. Interpret.
+    # generate forecast
+    fcast.auscons <- forecast(fit.auscons, h=h1)
+    
+    # evaluate
+    accuracy(fcast.auscons, ac.test.log)
+    
+    (fcast.auscons$mean - ac.test.log) %>% autoplot()
+    
+    # plot 
+    autoplot(fcast.auscons)+
+      autolayer(ac.test.log, series = 'data')+
+      coord_cartesian(xlim = c(1985, 1991.5), ylim = c(10.3, 10.75))+
+      ylab('log(expenditure)')
+    
+
+## 2. ######### LYNX TRAPPING IN CANADA ############
+  
+  ## 2.0 data and variables
+    lynx <- as.ts(dmseries("http://bit.ly/10Scgaz"), start = 1821)
+    h2 <- 12
+    
+  ## 2.1 Divide the data into a training set and a test set where the test set is the last 12 observations.
+    lynx.training <- window(lynx, end = 1922)  
+    lynx.test     <- window(lynx, start = 1923)
+    
+  ## 2.2 Identify an appropriate ARIMA model and estimate it
+    lynx.training %>% ur.kpss() %>% summary()
+    lynx.training %>% ggtsdisplay()
+    
+    #what does auto.arima suggest:
+    auto.arima(lynx.training)
+    auto.arima(lynx.training, stepwise = F, approximation = F)
+    coeftest(auto.arima(lynx.training, stepwise = F, approximation = F))
+    
+    # own modelling
+      # non-seasonal cyclic behaviour => use non-seasonal arima 
+      # ARIMA(p,d,q):
+      # d = 0, since the data is already stationary
+      # p = 8, q = 0, since ACF is exponenetially decaying
+      
+      Arima(lynx.training, order = c(8,0,0))
+      
+      #variation:
+      Arima(lynx.training, order = c(8,0,1))
+      Arima(lynx.training, order = c(8,0,2))
+      Arima(lynx.training, order = c(7,0,0))
+      Arima(lynx.training, order = c(9,0,0))
+      Arima(lynx.training, order = c(7,0,1))
+      Arima(lynx.training, order = c(9,0,1))
+      Arima(lynx.training, order = c(7,0,2))
+      Arima(lynx.training, order = c(9,0,2))
+      
+      ## stay with initial model!
+      ?Arima
+      fit.lynx <- Arima(lynx.training, order = c(8,0,0))
+      
+      autoplot(fit.lynx$x, series = "data") +
+        autolayer(fitted(fit.lynx), series = "fit")
+      
+      accuracy(fit.lynx)
+      
+      coeftest(fit.lynx)
+  
+      checkresiduals(fit.lynx)
+      
+  ## 2.3 Use the model to forecast the last h = 12 observations. Evaluate the forecasts and plot them and the original time series. Interpret.
+    # generate forecast
+    fcast.lynx <- fit.lynx %>% forecast(h=h2)
+    
+    accuracy(fcast.lynx, lynx)
+    
+    autoplot(fcast.lynx, xlim = c(1900, 1934))+
+      autolayer(lynx.test, series = 'test set')+
+      xlab('Time') + ylab('')
+    
+  ## 2.4 Use a Neural network autoregressive model (Hint: nnetar()) to forecast the same observations as above.
+    nnfit.lynx <- nnetar(lynx.training, lambda = 0)
+    
+    autoplot(nnfit.lynx$x)+
+      autolayer(nnfit.lynx$fitted, series = 'NNAR')
+    
+    accuracy(nnfit.lynx$fitted, lynx)
+      
+    nnfcast.lynx <- forecast(nnfit.lynx, h=h2, PI = T)
+    nnfcast.lynx %>% summary()
+    
+    autoplot(nnfcast.lynx, xlim = c(1900, 1934))+
+      autolayer(lynx.test, series = 'test set')+
+      xlab('Time') + ylab('')
+    
+  ## 2.5 Combine the forecasts in two ways: Average and by regression.
+    # average:
+    avg.fit.lynx <- (fit.lynx$fitted + nnfit.lynx$fitted)/2
+    
+    accuracy(avg.fit.lynx, lynx)
+    
+    avg.fcast.lynx <- (fcast.lynx$mean + nnfcast.lynx$mean)/2
+    
+    # regression:
+      # 1. generate variables
+      arima <- fitted(fit.lynx)[-(1:11)]
+      nnar <- fitted(nnfit.lynx)[-(1:11)]
+      
+      #2. regression of the fitted values
+      reg.fit.lynx <- tslm(window(lynx.training, start = 1832) ~ arima + nnar)
+      summary(reg.fit.lynx)
+      
+      accuracy(reg.fit.lynx$fitted, lynx)
+      
+      #compare
+      autoplot(lynx.training)+
+        autolayer(fitted(reg.fit.lynx))+
+        autolayer(fitted(fit.lynx))+
+        autolayer(fitted(nnfit.lynx))+
+        autolayer(avg.fit.lynx)
+      
+      #3. define new inpiut data and forcast the linear regression
+      nd = cbind(arima = fcast.lynx$mean, nnar = nnfcast.lynx$mean) %>% as.data.frame()
+    
+      reg.fcast.lynx <- forecast(reg.fit.lynx, newdata = nd)
+    
+      autoplot(window(lynx, start = 1920)) +
+        autolayer(reg.fcast.lynx, series = 'Reg. Forecast')+
+        ylab('')
+    
+
+  ## 2.6 Evaluate the four forecasts and plot the data and the forecasts.
+    #evaluation
+    accuracy(fcast.lynx, lynx)
+    accuracy(nnfcast.lynx, lynx)
+    accuracy(avg.fcast.lynx, lynx)
+    accuracy(reg.fcast.lynx, lynx)
+    
+    #plot of the forecasts with data
+    autoplot(window(lynx, start = 1920))+
+      autolayer(fcast.lynx, PI = F, series = "ARIMA(8,0,0)")+
+      autolayer(nnfcast.lynx, PI = F, series = "NNAR(11,6)")+
+      autolayer(avg.fcast.lynx, series = "Average")+
+      autolayer(reg.fcast.lynx, series = 'Regression', PI = F)+
+      ylab('')
+    
+    
