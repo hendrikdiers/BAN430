@@ -1,0 +1,110 @@
+library(forecast)
+library(ggplot2)
+library(ggpubr) #install.packages("ggpuhr")
+library(fma)
+library(expsmooth)
+library(fpp2)
+library(seasonal)
+library(mFilter) #install.packages("mFilter")
+library(tseries) #install.packages("tseries")
+library(scales)
+library(stargazer) #install.packages("stargazer")
+
+remove(list = ls())
+
+###### Reading Data 
+DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/master/exam2_2020.csv"), header = TRUE, sep = ";", dec = "," )
+DATA = DATA[,1:3]
+DATA = na.omit(DATA) #Deleting omitted variables
+
+COM = ts((DATA[,2]), frequency = 4, start = c(1980, 1), end = c(2019,3))
+INC = ts((DATA[,3]), frequency = 4, start = c(1980, 1), end = c(2019,3))
+h19 = 19
+
+#Training data
+COM.train = window(COM, start = 1980, end = c(2014,4))
+INC.train = window(INC, start = 1980, end = c(2014,4))
+
+#Test data
+COM.test = window(COM, start = (2015))
+INC.test = window(INC, start = (2015))
+
+###### Preliminary (exploratory) analysis
+summary(COM.train)
+summary(INC.test)
+quantile(COM.train)
+quantile(INC.test)
+
+autoplot(COM.train, series = "Final consumption expenditure")+
+  autolayer(INC.train, series = "Net
+national disposable income")+
+  ggtitle("Plot of both time series (Training Sets)")+
+  xlab("Quarter")+
+  ylab("Value per Quarter")
+
+summary(tslm((COM.train) ~ trend + season))
+summary(tslm((INC.train) ~ trend + season))
+
+Acf = ggAcf(COM.train, lag.max = 40)+
+  ggtitle("Autocorrelation function for Final consumption expenditure")
+#Parctial Autocorrelation plots
+Pacf = ggPacf(COM.train, lag.max = 40)+
+  ggtitle("Partial Autocorrelation function for Final consumption expenditure")
+ggarrange(Acf, Pacf, ncol = 2, nrow=1, legend = NULL,
+          font.label = list(size = 14))
+
+Acf = ggAcf(INC.train, lag.max = 40)+
+  ggtitle("Autocorrelation function for Net national disposable income")
+#Parctial Autocorrelation plots
+Pacf = ggPacf(INC.train, lag.max = 40)+
+  ggtitle("Partial Autocorrelation function for Net
+national disposable income")
+ggarrange(Acf, Pacf, ncol = 2, nrow=1, legend = NULL,
+          font.label = list(size = 14))
+
+#Test for stationarity
+kpss.test(INC.train)
+kpss.test(COM.train)
+
+adf.test(INC.train)
+adf.test(COM.train)
+
+COM.train.stl = stl(COM.train, t.window = 13, s.window = "periodic", robust = TRUE)
+INC.train.stl = stl(INC.train, t.window = 13, s.window = "periodic", robust = TRUE)
+
+autoplot(COM.train.stl) +
+  ggtitle("STL decompostion of Final consumption expenditure")
+
+autoplot(INC.train.stl) +
+  ggtitle("STL decompostion of Net national disposable income")
+
+COM.train.seasadj.filter = hpfilter(COM.train.stl$time.series[,2], drift=TRUE)
+COM.train.seasadj.filter.cycle = ts(COM.train.seasadj.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
+
+COM.train.raw.filter = hpfilter(COM.train, drift=TRUE)
+COM.train.raw.filter.cycle = ts(COM.train.raw.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
+
+ggplot()+
+  autolayer(COM.train.seasadj.filter.cycle, series = "Seasonal adjusted")+
+  autolayer(COM.train.raw.filter.cycle, series = "Seasonal unadjusted")+xlab("Quater")+
+  scale_y_continuous(name="Business Cycle")+
+  ggtitle(label = "Cycle analysis of Final consumption expenditure")
+
+INC.train.seasadj.filter = hpfilter(INC.train.stl$time.series[,2], drift=TRUE)
+INC.train.seasadj.filter.cycle = ts(INC.train.seasadj.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
+
+INC.train.raw.filter = hpfilter(INC.train, drift=TRUE)
+INC.train.raw.filter.cycle = ts(INC.train.raw.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
+
+ggplot()+
+  autolayer(INC.train.seasadj.filter.cycle, series = "Seasonal adjusted")+
+  autolayer(INC.train.raw.filter.cycle, series = "Seasonal unadjusted")+xlab("Quater")+
+  scale_y_continuous(name="Business Cycle")+
+  ggtitle(label = "Cycle analysis of Net national disposable income")
+
+
+
+################################# 
+#Weiter arbeiten hier
+auto.arima(INC.train)
+auto.arima(COM.train)
