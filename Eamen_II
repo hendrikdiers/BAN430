@@ -9,7 +9,6 @@ library(mFilter) #install.packages("mFilter")
 library(tseries) #install.packages("tseries")
 library(scales)
 library(stargazer) #install.packages("stargazer")
-
 library(urca) #install.packages("urca")
 
 remove(list = ls())
@@ -38,8 +37,7 @@ quantile(COM.train)
 quantile(INC.test)
 
 autoplot(COM.train, series = "Final consumption expenditure")+
-  autolayer(INC.train, series = "Net
-national disposable income")+
+  autolayer(INC.train, series = "Netnational disposable income")+
   ggtitle("Plot of both time series (Training Sets)")+
   xlab("Quarter")+
   ylab("Value per Quarter")
@@ -115,15 +113,18 @@ ggplot()+
 nsdiffs(COM.train) #indicates that first differencial would make the series stationary 
 nsdiffs(INC.train) #indicates that first differencial would make the series stationary
 
-######long run realtionship
-qplot(COM.train,INC.train, asp = 1)+
-  ylab("Net national disposable income")+xlab("Final consumption expenditure")+
-  ggtitle("Scatterplot: Income and Consumption")
+#Exploring long term relationship: Consumption and Income
 
-###!!! Hier genre noch Input: war das einzige das mir eingefallen ist
+COM.train.reslm = tslm((COM.train) ~ trend + season + INC.train)
+summary(COM.train.reslm)
 
+train = data.frame(INC.train,COM.train)
+ggplot(data = train, aes(INC.train,COM.train)) +
+  geom_point() +
+  geom_smooth(method = "lm")+
+  ylab("Final consumption expenditure") + xlab("Net national disposable income")+
+  ggtitle("Regression: Consumtion (dependent variable) ~ Income (independent variable)")
 
-#################################
 #Forecasting with seasonal ARIMA
 #taking seasonal difference lag = 4
 COM.train %>% diff(lag=4) %>% ggtsdisplay()
@@ -137,8 +138,6 @@ COM.train.arima #seasonal ARIMA
 
 COM.train.arima.coef = c(COM.train.arima$coef)
 COM.train.arima.coef
-
-
 
 checkresiduals(COM.train.arima)
 #Portmanteau tests for autocorrelation
@@ -159,39 +158,26 @@ autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
 
 autoplot(COM.train.arima)
 
+######Compare ACF and PCF from data and model
+Acf.COM.train = Acf
+Pacf.COM.train = Pacf
+
+#Autocorrelation plot model implied
+Acf.COM.train.arima = ggAcf(COM.train.arima$fitted, lag.max = 40)+
+  ggtitle("Autocorrelation function for model implied")
+
+#Parctial Autocorrelation plot model implied
+Pacf.COM.train.arima = ggPacf(COM.train.arima$fitted, lag.max = 40)+
+  ggtitle("Partial Autocorrelation function for model implied")
+
+#Autocorrelation plots
+ggarrange(Acf.COM.train, Acf.COM.train.arima, ncol = 2, nrow=1, legend = NULL,
+          font.label = list(size = 14))
+#Parctial Autocorrelation
+ggarrange(Pacf.COM.train, Pacf.COM.train.arima, ncol = 2, nrow=1, legend = NULL,
+          font.label = list(size = 14))
 
 ###### Forecasting Consumption with Income as explanatory variable
-#making both series stationary by taking first log() differential
-######################
-#!!!!!!!!!Bitte prüfe mal, ob wir mit einer stationären Serie arbeiten müssen 
-#Habe die Aufgabe unten mit Level daten bearbeitet
-#https://otexts.com/fpp2/forecasting.html
-COM.train.diff = diff(log(COM.train), lag = 1)
-INC.train.diff = diff(log(INC.train), lag = 1)
-
-kpss.test(COM.train.diff)
-kpss.test(INC.train.diff)
-
-summary(ur.df(COM.train.diff, type = "trend", lags = 0))
-summary(ur.df(INC.train.diff))
-
-autoplot(cbind(COM.train.diff,INC.train.diff), facets = TRUE)+
-  xlab("Quater")+ylab("")+ ggtitle("Quarterly changes in consumption and income")
-
-COM.train.diff.reg = auto.arima(COM.train.diff, xreg = INC.train.diff, stepwise = FALSE, approximation = FALSE)
-
-cbind("Regression Errors" = residuals(COM.train.diff.reg, type="regression"),
-      "ARIMA errors" = residuals(COM.train.diff.reg, type="innovation")) %>%
-  autoplot(facets=TRUE)
-
-checkresiduals(COM.train.diff.reg)
-Box.test(COM.train.diff.reg$residuals, lag = 10, fitdf = 0)
-#Box-Ljung test
-Box.test(COM.train.diff.reg$residuals, lag = 10, fitdf = 0, type = "Lj")
-#Shapiro_wilk test for residul normality
-shapiro.test(COM.train.diff.reg$residuals)
-######################
-
 ######Forecasting level data
 COM.train.arima.reg = auto.arima(COM.train, xreg = INC.train, stepwise = FALSE, approximation = FALSE)
 COM.train.arima.reg
@@ -210,14 +196,10 @@ summary(INC.train.fore) #ets(M,A,M)
 
 COM.train.arima.reg.fore = forecast(COM.train.arima.reg, xreg = cbind(INC.train = INC.train.fore.mean), h = 19)
 
-
-
 autoplot(window(COM.train, start=c(2005,1)), series = "Training Data")+
   autolayer(COM.train.arima.reg.fore, series = "Consumption Foreceat")+
   autolayer(COM.test, series = "Test Data") + xlab("Quater") + ylab("")+
   ggtitle("Forecast from Regression with ARIMA(1,0,0)(2,1,2)[4] errors")
-
-
 
 ######Using both forecasts 
 #average
@@ -244,7 +226,7 @@ autoplot(window(COM.train, start= c(2005,1)), series = "Training data")+
   autolayer(COM.test, series = "Test data")+
   ylab("")+xlab("Quater")+ggtitle("Forecast with optimal weights")
 
-#Plot of for diffrent forecasts
+#Plot of four diffrent forecasts
 autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
   autolayer(COM.train.reg.fore$mean, series = "Optimal weights")+
   autolayer(COM.train.arima.rec.fore$mean, series = "Income as explanatory variable")+
