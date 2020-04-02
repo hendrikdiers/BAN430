@@ -10,6 +10,8 @@ library(tseries) #install.packages("tseries")
 library(scales)
 library(stargazer) #install.packages("stargazer")
 library(urca) #install.packages("urca")
+library(GGally) #install.packages("GGally")
+library(caschrono) #install.package("caschrono")
 
 remove(list = ls())
 
@@ -121,6 +123,11 @@ nsdiffs(INC.train) #indicates that first differencial would make the series stat
 COM.train.reslm = tslm((COM.train) ~ trend + season + INC.train)
 summary(COM.train.reslm)
 
+TRAIN.IncCom =  matrix(c(COM.train, INC.train),nrow = length(COM.train))
+TRAIN.IncCom = ts(combined, start=1980)
+colnames(TRAIN.IncCom) <- c("Income", "Consumption")
+TRAIN.IncCom %>% as.data.frame() %>% ggpairs()
+
 ratio<-(COM.train/INC.train)
 summary(ratio)
 sd(ratio)
@@ -156,7 +163,10 @@ summary(COM.train.arima) #seasonal ARIMA
 
 COM.train.arima.coef = c(COM.train.arima$coef)
 COM.train.arima.coef
+COM.train.arima.coef.ar = COM.train.arima.coef[1:2] 
+COM.train.arima.coef.sma  = COM.train.arima.coef[3]
 
+ 
 checkresiduals(COM.train.arima)
 #Portmanteau tests for autocorrelation
 #Test if errors are coming from a white noise series
@@ -177,25 +187,7 @@ autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
 autoplot(COM.train.arima)
 
 ######Compare ACF and PCF from data and model
-Acf_data = ggAcf(COM.train, lag.max = 40)+
-  ggtitle("Autocorrelation function for consumption data")
-Pacf_data =  ggPacf(COM.train, lag.max = 40)+
-  ggtitle("Partial Autocorrelation function for consumption data")
-
-#Autocorrelation plot model implied
-Acf.COM.train.arima = ggAcf(COM.train.arima$fitted, lag.max = 40)+
-  ggtitle("Autocorrelation function for model implied")
-
-#Parctial Autocorrelation plot model implied
-Pacf.COM.train.arima = ggPacf(COM.train.arima$fitted, lag.max = 40)+
-  ggtitle("Partial Autocorrelation function for model implied")
-
-#Autocorrelation plots
-ggarrange(Acf_data, Acf.COM.train.arima, ncol = 2, nrow=1, legend = NULL,
-          font.label = list(size = 14))
-#Partial Autocorrelation plots
-ggarrange(Pacf_data, Pacf.COM.train.arima, ncol = 2, nrow=1, legend = NULL,
-          font.label = list(size = 14))
+plotacfthemp(COM.train, ar = c(COM.train.arima.coef.ar), ma = c(0,0,0,0,COM.train.arima.coef.sma))
 
 ###### Forecasting Consumption with Income as explanatory variable
 ######Forecasting level data
