@@ -11,7 +11,7 @@ library(scales)
 library(stargazer) #install.packages("stargazer")
 library(urca) #install.packages("urca")
 library(GGally) #install.packages("GGally")
-library(caschrono) #install.package("caschrono")
+library(caschrono)
 
 remove(list = ls())
 
@@ -20,10 +20,13 @@ DATA = read.csv(url("https://raw.githubusercontent.com/hendrikdiers/BAN430/maste
 DATA = DATA[,1:3]
 DATA = na.omit(DATA) #Deleting omitted variables
 
+#Convert data to ts
 COM = ts((DATA[,2]), frequency = 4, start = c(1980, 1), end = c(2019,3))
 INC = ts((DATA[,3]), frequency = 4, start = c(1980, 1), end = c(2019,3))
+#Set forecast length
 h19 = 19
 
+##Devinding data into training and test set 
 #Training data
 COM.train = window(COM, start = 1980, end = c(2014,4))
 INC.train = window(INC, start = 1980, end = c(2014,4))
@@ -38,50 +41,61 @@ summary(INC.test)
 quantile(COM.train)
 quantile(INC.test)
 
+#Plotting both series 
 autoplot(COM.train, series = "Final consumption expenditure")+
   autolayer(INC.train, series = "Netnational disposable income")+
   ggtitle("Plot of both time series (Training Sets)")+
   xlab("Quarter")+
   ylab("Value per Quarter")
 
+#Subseasonal plot for graphic analysis of seasonality
 inc_q=ggsubseriesplot(INC.train)+
   ggtitle('Seasonal Series Plot Income (Training Data)')+
-  ylab('Net national disposable income (in Billion €)')
+  ylab('Net national disposable income (in Billion ???)')
 
 con_q=ggsubseriesplot(COM.train)+
   ggtitle('Seasonal Series Plot Consumption (Training Data)')+
-  ylab('Final consumption expenditure (in Billion €)')
+  ylab('Final consumption expenditure (in Billion ???)')
 
+#showing both subseasonal plots together 
 ggarrange(inc_q, con_q, ncol = 2, nrow=1, legend = NULL,
           font.label = list(size = 14))
 
+#Quantitative analysis of data for seasonality with OLS regression
 summary(tslm((COM.train) ~ trend + season))
 summary(tslm((INC.train) ~ trend + season))
 
+#Autocorrelation plot for consumption
 Acf = ggAcf(COM.train, lag.max = 40)+
   ggtitle("Autocorrelation function for Final consumption expenditure")
-#Parctial Autocorrelation plots
+
+#Parctial Autocorrelation plot for consumption
 Pacf = ggPacf(COM.train, lag.max = 40)+
   ggtitle("Partial Autocorrelation function for Final consumption expenditure")
+#Arranging ACF and PACF plots for consumption
 ggarrange(Acf, Pacf, ncol = 2, nrow=1, legend = NULL,
           font.label = list(size = 14))
 
+#Autocorrelation plot for income
 Acf = ggAcf(INC.train, lag.max = 40)+
   ggtitle("Autocorrelation function for Net national disposable income")
-#Parctial Autocorrelation plots
+
+#Parctial Autocorrelation plot for income
 Pacf = ggPacf(INC.train, lag.max = 40)+
   ggtitle("Partial Autocorrelation function for Net
 national disposable income")
+#Arranging ACF and PACF plots for income
 ggarrange(Acf, Pacf, ncol = 2, nrow=1, legend = NULL,
           font.label = list(size = 14))
 
 #Test for stationarity
-kpss.test(INC.train) #ur.kpss()
-kpss.test(COM.train) #summary(ur.kpss(COM.train))
+kpss.test(INC.train)
+kpss.test(COM.train) 
 
 adf.test(INC.train)
 adf.test(COM.train)
 
+#STL decomposition of both series for further analysis 
 COM.train.stl = stl(COM.train, t.window = 13, s.window = "periodic", robust = TRUE)
 INC.train.stl = stl(INC.train, t.window = 13, s.window = "periodic", robust = TRUE)
 
@@ -91,9 +105,12 @@ autoplot(COM.train.stl) +
 autoplot(INC.train.stl) +
   ggtitle("STL decompostion of Net national disposable income")
 
+###Business cycle analysis with HP-filter of consumption
+#on seasonal adjusted series
 COM.train.seasadj.filter = hpfilter(COM.train.stl$time.series[,2], drift=TRUE)
 COM.train.seasadj.filter.cycle = ts(COM.train.seasadj.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
 
+#on seasonal unadjusted series
 COM.train.raw.filter = hpfilter(COM.train, drift=TRUE)
 COM.train.raw.filter.cycle = ts(COM.train.raw.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
 
@@ -103,9 +120,12 @@ ggplot()+
   scale_y_continuous(name="Business Cycle")+
   ggtitle(label = "Cycle analysis of Final consumption expenditure")
 
+###Business cycle analysis with HP-filter of income
+#on seasonal adjusted series
 INC.train.seasadj.filter = hpfilter(INC.train.stl$time.series[,2], drift=TRUE)
 INC.train.seasadj.filter.cycle = ts(INC.train.seasadj.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
 
+#on seasonal unadjusted series
 INC.train.raw.filter = hpfilter(INC.train, drift=TRUE)
 INC.train.raw.filter.cycle = ts(INC.train.raw.filter$cycle, start = c(1980, 1), end = c(2014, 4), frequency = 4)
 
@@ -115,20 +135,23 @@ ggplot()+
   scale_y_continuous(name="Business Cycle")+
   ggtitle(label = "Cycle analysis of Net national disposable income")
 
+#calculation of # of differences needed to obtain stationarity
 nsdiffs(COM.train) #indicates that first differencial would make the series stationary 
 nsdiffs(INC.train) #indicates that first differencial would make the series stationary
 
-#Exploring long term relationship: Consumption and Income
-
+###Exploring long term relationship: Consumption and Income
+#OLS regression with trend season and income as explanatory variables
 COM.train.reslm = tslm((COM.train) ~ trend + season + INC.train)
 summary(COM.train.reslm)
 
+#futher relationsship anylysis
 TRAIN.IncCom =  matrix(c(COM.train, INC.train),nrow = length(COM.train))
 TRAIN.IncCom = ts(combined, start=1980)
 colnames(TRAIN.IncCom) <- c("Income", "Consumption")
 TRAIN.IncCom %>% as.data.frame() %>% ggpairs()
 
-ratio<-(COM.train/INC.train)
+#analysis of the long term ratio
+ratio = (COM.train/INC.train)
 summary(ratio)
 sd(ratio)
 
@@ -144,30 +167,34 @@ train = data.frame(INC.train,COM.train)
 p2=ggplot(data = train, aes(INC.train,COM.train)) +
   geom_point() +
   geom_smooth(method = "lm")+
-  ylab("Final consumption expenditure (in Billion €)") + xlab("Net national disposable income (in Billion €)")+
+  ylab("Final consumption expenditure (in Billion ???)") + xlab("Net national disposable income (in Billion ???)")+
   ggtitle("Regression: Consumtion (dep. variable) ~ Income (ind. variable)")
 
+#Plotting regression line and longterm ration
 ggarrange(p2, p1, ncol = 2, nrow=1, legend = NULL,
           font.label = list(size = 14))
 
-#Forecasting with seasonal ARIMA
+###Forecasting with seasonal ARIMA
 #taking seasonal difference lag = 4
 COM.train %>% diff(lag=4) %>% ggtsdisplay()
 #sereies still seams not to be stationary: applying first diff
 COM.train %>% diff(lag=4) %>% diff() %>% ggtsdisplay()
 #these plots could be used to identify sufficiant seasonal ARIMA models
 
-#but the auto.arima function take seasonal ARIMA models into account as well
+#but the auto.arima function takes seasonal ARIMA models into account as well
 COM.train.arima = auto.arima(COM.train, stepwise = FALSE, approximation = FALSE) #
 summary(COM.train.arima) #seasonal ARIMA
 
+#extracting the estimated parameters
 COM.train.arima.coef = c(COM.train.arima$coef)
 COM.train.arima.coef
+#AR part
 COM.train.arima.coef.ar = COM.train.arima.coef[1:2] 
+#seasonal ma part
 COM.train.arima.coef.sma  = COM.train.arima.coef[3]
 
- 
 checkresiduals(COM.train.arima)
+
 #Portmanteau tests for autocorrelation
 #Test if errors are coming from a white noise series
 #Box Pierce test
@@ -177,23 +204,27 @@ Box.test(COM.train.arima$residuals, lag = 10, fitdf = 0, type = "Lj")
 #Shapiro_wilk test for residul normality
 shapiro.test(COM.train.arima$residuals)
 
+#Forecast with estimated model seasonal ARIMA
 COM.train.arima.fore = forecast(COM.train.arima, h = h19)
 autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
   autolayer(COM.train.arima.fore, series = "Forecast from ARIMA(2,0,0)(0,1,1)")+
   autolayer(COM.test, series = "Test Data")+
   autolayer(window(COM.train.arima$fitted, start = c(2005,1)), series = "Fitted values from ARIMA(2,0,0)(0,1,1)")+
-  ggtitle("Forecasting Consumption with ARIMA(2,0,0)(0,1,1)[4] model")+ scale_y_continuous(name="Final consumption expenditure (in Billion €)")+xlab("Quarter")
+  ggtitle("Forecasting Consumption with ARIMA(2,0,0)(0,1,1)[4] model")+ scale_y_continuous(name="Final consumption expenditure (in Billion ???)")+xlab("Quarter")
 
+#Observing parameters of the model in unit circle
 autoplot(COM.train.arima)
 
-######Compare ACF and PCF from data and model
-plotacfthemp(COM.train, ar = c(COM.train.arima.coef.ar), ma = c(0,0,0,0,COM.train.arima.coef.sma))
+###Compare ACF and PCF from data and model with build in function ARMAacf()
+plotacfthemp(COM.train,ar = c(COM.train.arima.coef.ar), ma = c(0,0,0,0,COM.train.arima.coef.sma))
+
 
 ###### Forecasting Consumption with Income as explanatory variable
-######Forecasting level data
+###Forecasting level data with income as explanatory variable
 COM.train.arima.reg = auto.arima(COM.train, xreg = INC.train, stepwise = FALSE, approximation = FALSE)
 COM.train.arima.reg
 
+#Analysis of the results from estimated model
 checkresiduals(COM.train.arima.reg)
 Box.test(COM.train.arima.reg$residuals, lag = 10, fitdf = 0)
 #Box-Ljung test
@@ -201,27 +232,28 @@ Box.test(COM.train.arima.reg$residuals, lag = 10, fitdf = 0, type = "Lj")
 #Shapiro_wilk test for residul normality
 shapiro.test(COM.train.arima.reg$residuals)
 
-#Forecasting income to use in regression forecast of consumption
+#Forecasting income for futher us in regression forecast of consumption
 INC.train.fore = forecast(INC.train, h = h19)
 INC.train.fore.mean = INC.train.fore$mean
 summary(INC.train.fore) #ets(M,A,M)
 
 COM.train.arima.reg.fore = forecast(COM.train.arima.reg, xreg = cbind(INC.train = INC.train.fore.mean), h = 19)
 
+#Plotting forecast from estimated regression ARIMA
 autoplot(window(COM.train, start=c(2005,1)), series = "Training Data")+
   autolayer(COM.train.arima.reg.fore, series = "Consumption Foreceat")+
-  autolayer(COM.test, series = "Test Data") + xlab("Quarter") + ylab("Final consumption expenditure (in Billion €)")+
+  autolayer(COM.test, series = "Test Data") + xlab("Quarter") + ylab("Final consumption expenditure (in Billion ???)")+
   ggtitle("Forecast from with ARIMAX(1,0,0)(2,1,2)[4] X=Income")
 
-######Using both forecasts 
-#average
+###Using both forecasts to calcuat new forecast 
+#using average weights
 COM.train.fore.aver = (COM.train.arima.reg.fore$mean+COM.train.arima.fore$mean)/2
 autoplot(window(COM.train, start= c(2005,1)), series = "Training data")+
   autolayer(COM.train.fore.aver, series = "Average forecast")+
   autolayer(COM.test, series = "Test data")+
-  ylab("Final consumption expenditure (in Billion €)")+xlab("Quarter")+ggtitle("Forecast with average of both forecasts")
+  ylab("Final consumption expenditure (in Billion ???)")+xlab("Quarter")+ggtitle("Forecast with average of both forecasts")
 
-#optimal weights
+#using optimal weights, determined by regression
 #regress fitted values on Consumption
 COM.train.arima.reg.fit = COM.train.arima.reg$fitted
 COM.train.arima.fit = COM.train.arima$fitted
@@ -239,7 +271,7 @@ checkresiduals(COM.train.reg.fore)
 autoplot(window(COM.train, start= c(2005,1)), series = "Training data")+
   autolayer(COM.train.reg.fore, series = "Optimal weights")+
   autolayer(COM.test, series = "Test data")+
-  ylab("Final consumption expenditure (in Billion €)")+xlab("Quarter")+ggtitle("Forecast with optimal weights")
+  ylab("Final consumption expenditure (in Billion ???)")+xlab("Quarter")+ggtitle("Forecast with optimal weights")
 
 #Plot of four diffrent forecasts
 autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
@@ -247,8 +279,9 @@ autoplot(window(COM.train, start = c(2005,1)), series = "Training Data")+
   autolayer(COM.train.arima.reg.fore$mean, series = "SARIMAX (Income as explanatory variable)")+
   autolayer(COM.train.arima.fore$mean, series = "SARIMA")+
   autolayer(COM.train.fore.aver, series = "Average")+
-  ylab("Final consumption expenditure (in Billion €)")+xlab("Quarter")+ggtitle("Plot of four diffrent forecast")
+  ylab("Final consumption expenditure (in Billion ???)")+xlab("Quarter")+ggtitle("Plot of four diffrent forecast")
 
+###comparison and analysis of the forecast on out of sampel data
 COM.train.reg.fore.acc = accuracy(COM.train.reg.fore, COM.test)
 COM.train.arima.reg.fore.acc = accuracy(COM.train.arima.reg.fore, COM.test)
 COM.train.arima.fore.acc = accuracy(COM.train.arima.fore, COM.test)
